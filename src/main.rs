@@ -22,7 +22,7 @@ async fn main() {
         let mut daemon = Daemon::new(config_path);
         daemon.start(&socket_path).await;
     } else {
-        let cli = Cli::from_args();
+        let cli = Cli{};
         run(cli,&socket_path).await;
     }
 }
