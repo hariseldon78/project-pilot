@@ -26,6 +26,33 @@ pub async fn run(cli: Cli,socket_path: &str) {
                         Command::new("add")
                             .about("add a new project")
                             .arg(Arg::new("project-name")),
+                        Command::new("del")
+                            .about("delete a project")
+                            .arg(Arg::new("project-name")),
+                        Command::new("info")
+                            .about("get info about a project")
+                            .arg(Arg::new("project-name")),
+                        Command::new("get-property")
+                            .about("get the value of a property")
+                            .arg(Arg::new("project-name"))
+                            .arg(Arg::new("property")),
+                        Command::new("del-property")
+                            .about("delete a property")
+                            .arg(Arg::new("project-name"))
+                            .arg(Arg::new("property")),
+                        Command::new("set-property")
+                            .about("set property to a value")
+                            .arg(Arg::new("project-name"))
+                            .arg(Arg::new("property"))
+                            .arg(Arg::new("value")),
+                        Command::new("disable-plugin")
+                            .about("disable a plugin for a project")
+                            .arg(Arg::new("project-name"))
+                            .arg(Arg::new("plugin")),
+                        Command::new("enable-plugin")
+                            .about("enable a plugin for a project")
+                            .arg(Arg::new("project-name"))
+                            .arg(Arg::new("plugin")),
                         Command::new("list")
                             .about("list the defined projects")]))
         .get_matches();
