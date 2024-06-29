@@ -108,6 +108,9 @@ impl Daemon {
         match command {
             "add" => {
                 if let Some(serde_json::value::Value::String(project_name)) = arguments.get("project-name") {
+                    if config.data.projects.iter().any(|p| p.name == *project_name) {
+                        return format!("Project {} already exists", project_name);
+                    }
                     config.data.projects.push(Project {
                         name: project_name.clone(),
                         plugins: Vec::new(),
