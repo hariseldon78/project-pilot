@@ -1,23 +1,24 @@
-use std::path::PathBuf;
-use tokio::net::UnixListener;
-use tokio_stream::StreamExt;
+use crate::config::{SavedConfig, Project};
 use serde_json::Value;
-use tokio_serde::formats::SymmetricalJson;
-use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
-use crate::config::{Config, Project};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
+use tokio::sync::Mutex;
+use tokio_serde::formats::SymmetricalJson;
+use tokio_stream::StreamExt;
+use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
 pub struct Daemon {
-    config_path: PathBuf,
-    config: Config,
+    config: Arc<Mutex<SavedConfig>>,
 }
 
 impl Daemon {
     pub fn new(config_path: PathBuf) -> Self {
-        let config = Config::load(&config_path);
-        Daemon { config_path, config }
+        let config = SavedConfig::new(config_path);
+        Daemon { config: Arc::new(Mutex::new(config)) }
     }
 
     pub async fn start(&mut self, socket_path: &str) {
@@ -33,16 +34,28 @@ impl Daemon {
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
+                    println!("--- new connection ---");
 
                     let length_delimited = FramedRead::new(stream,LengthDelimitedCodec::new());
                     let mut deserializer = tokio_serde::SymmetricallyFramed::new(length_delimited,SymmetricalJson::<Value>::default());
+                    let config = Arc::clone(&self.config);
 
                     tokio::spawn(async move {
+                        // we accept multiple messages on the same connection, a sort of scripting
                         while let Some(msg)=deserializer.try_next().await.unwrap() {
-                            dbg!(msg);
+
+                            dbg!(msg.clone());
+                            let subject = msg.get("subject").unwrap().as_str().unwrap();
+                            let command = msg.get("command").unwrap().as_str().unwrap();
+                            let params = msg.get("params").unwrap().as_object().unwrap();
+                            dbg!(&params);
+                            let response = Daemon::handle_request(&config,subject, command, params).await;
+
+                            dbg!(&response);
+                            // let _ = writer.write_all(response.as_bytes()).await;
                         }
                     });
-
+                    
 
 
 
@@ -74,25 +87,33 @@ impl Daemon {
         }
     }
 
-    async fn handle_request(&mut self, request: &str) -> String {
-        let parts: Vec<&str> = request.split_whitespace().collect();
-        match parts[0] {
-            "project_add" => {
-                if parts.len() > 1 {
-                    let project_name = parts[1].to_string();
-                    self.config.projects.push(Project {
-                        name: project_name,
+    async fn handle_request(config:&Arc<Mutex<SavedConfig>>, subject: &str, command: &str, arguments: &serde_json::Map<String, Value>) -> String {
+        match subject {
+            "project" => {
+                Daemon::handle_project(config,command,arguments).await
+            }
+            _ => "Unknown command".to_string(),
+        }
+    }
+
+    async fn handle_project(config:&Arc<Mutex<SavedConfig>>, command: &str, arguments: &serde_json::Map<String, Value>) -> String {
+        let mut config = config.lock().await;
+        match command {
+            "add" => {
+                if let Some(serde_json::value::Value::String(project_name)) = arguments.get("project-name") {
+                    config.data.projects.push(Project {
+                        name: project_name.clone(),
                         plugins: Vec::new(),
                         properties: HashMap::new(),
                     });
-                    self.config.save(&self.config_path);
-                    format!("Project {} added", parts[1])
+                    config.save();
+                    format!("Project {} added", project_name)
                 } else {
                     "Invalid command".to_string()
                 }
             }
-            "project_list" => {
-                let project_names: Vec<String> = self.config.projects.iter().map(|p| p.name.clone()).collect();
+            "list" => {
+                let project_names: Vec<String> = config.data.projects.iter().map(|p| p.name.clone()).collect();
                 project_names.join(", ")
             }
             _ => "Unknown command".to_string(),

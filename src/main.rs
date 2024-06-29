@@ -13,12 +13,13 @@ use std::path::PathBuf;
 async fn main() {
     let home:String = env::var("HOME").unwrap();
     let socket_path:String = home.clone()+"/.cache/project-pilot.socket";
+    let config_path:String = home.clone()+"/.config/project-pilot/config.toml";
 
 
     // Start daemon if no command is provided
     if std::env::args().len() == 1 {
         println!("Starting daemon");
-        let config_path = PathBuf::from(home+".config/project-pilot/config.toml");
+        let config_path = PathBuf::from(config_path.clone());
         let mut daemon = Daemon::new(config_path);
         daemon.start(&socket_path).await;
     } else {

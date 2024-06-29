@@ -27,7 +27,29 @@ impl Config {
     }
 
     pub fn save(&self, path: &PathBuf) {
+        println!("Saving config to {:?}", path);
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent).expect("Failed to create directories");
+            }
+        }
         let content = toml::to_string(&self).expect("Failed to serialize config");
         fs::write(path, content).expect("Unable to write config file");
+    }
+}
+
+pub struct SavedConfig {
+    pub path: PathBuf,
+    pub data: Config,
+}
+
+impl SavedConfig {
+    pub fn new(path: PathBuf) -> Self {
+        let config = Config::load(&path);
+        SavedConfig { path, data:config }
+    }
+
+    pub fn save(&self) {
+        self.data.save(&self.path);
     }
 }
