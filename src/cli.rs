@@ -1,8 +1,8 @@
 use clap::{Arg,arg,Command,command};
 use crate::config::{Config, Project};
 use futures::sink::SinkExt;
-use serde_json::Value;
-use serde_json::json;
+use futures::executor::block_on;
+use serde_json::{Value,json};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -39,26 +39,23 @@ pub async fn run(cli: Cli,socket_path: &str) {
 
     let stream = UnixStream::connect(socket_path).await.expect("Failed to connect to daemon");
     let (read_socket,write_socket)=split(stream);
-    {
-        let length_delimited_read = FramedRead::new(read_socket, LengthDelimitedCodec::new());
-        let mut deserializer = tokio_serde::SymmetricallyFramed::new(length_delimited_read, SymmetricalJson::<Value>::default());
 
-        tokio::spawn(async move {
-            while let Some(msg)=deserializer.try_next().await.unwrap() {
-                dbg!(msg);
-            }
-        });
 
-    }
-    {
-        let length_delimited_write = FramedWrite::new(write_socket,LengthDelimitedCodec::new());
-        let mut serializer = tokio_serde::SymmetricallyFramed::new(length_delimited_write,SymmetricalJson::<Value>::default());
+    let length_delimited_write = FramedWrite::new(write_socket,LengthDelimitedCodec::new());
+    let mut serializer = tokio_serde::SymmetricallyFramed::new(length_delimited_write,SymmetricalJson::<Value>::default());
+    serializer.send(json!({
+        "subject":subject,
+        "command":command,
+        "params":args_map
+    }))
+        .await.unwrap();
 
-        serializer.send(json!({
-            "subject":subject,
-            "command":command,
-            "params":args_map
-        }))
-            .await.unwrap();
-    }
+
+    let length_delimited_read = FramedRead::new(read_socket, LengthDelimitedCodec::new());
+    let mut deserializer = tokio_serde::SymmetricallyFramed::new(length_delimited_read, SymmetricalJson::<Value>::default());
+    block_on(async move {
+        let msg=deserializer.try_next().await.unwrap().unwrap();
+        println!("{}",msg.get("lines").unwrap().as_str().unwrap());
+    });
+
 }

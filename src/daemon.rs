@@ -1,15 +1,16 @@
 use crate::config::{SavedConfig, Project};
-use serde_json::Value;
+use futures::sink::SinkExt;
+use serde_json::{Value,json};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::UnixListener;
 use tokio::sync::Mutex;
 use tokio_serde::formats::SymmetricalJson;
 use tokio_stream::StreamExt;
-use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 pub struct Daemon {
     config: Arc<Mutex<SavedConfig>>,
@@ -36,8 +37,12 @@ impl Daemon {
                 Ok((stream, _)) => {
                     println!("--- new connection ---");
 
-                    let length_delimited = FramedRead::new(stream,LengthDelimitedCodec::new());
-                    let mut deserializer = tokio_serde::SymmetricallyFramed::new(length_delimited,SymmetricalJson::<Value>::default());
+                    let (read_socket,write_socket)=split(stream);
+                    
+                    let length_delimited_read = FramedRead::new(read_socket,LengthDelimitedCodec::new());
+                    let mut deserializer = tokio_serde::SymmetricallyFramed::new(length_delimited_read,SymmetricalJson::<Value>::default());
+                    let length_delimited_write = FramedWrite::new(write_socket,LengthDelimitedCodec::new());
+                    let mut serializer = tokio_serde::SymmetricallyFramed::new(length_delimited_write,SymmetricalJson::<Value>::default());
                     let config = Arc::clone(&self.config);
 
                     tokio::spawn(async move {
@@ -52,6 +57,8 @@ impl Daemon {
                             let response = Daemon::handle_request(&config,subject, command, params).await;
 
                             dbg!(&response);
+                            serializer.send(json!({"lines":response}))
+                                .await.unwrap();
                             // let _ = writer.write_all(response.as_bytes()).await;
                         }
                     });
