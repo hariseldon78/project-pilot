@@ -2,6 +2,7 @@
 mod config;
 mod daemon;
 mod cli;
+pub mod plugin;
 
 use std::env;
 use cli::{Cli, run};
