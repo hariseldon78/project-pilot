@@ -58,9 +58,13 @@ pub async fn run(cli: Cli, socket_path: &str) {
         .subcommand(
             Command::new("event")
                 .about("work with events")
-                .subcommands([Command::new("trigger")
-                    .about("trigger an event")
-                    .arg(Arg::new("event-name").required(true))]),
+                .subcommands([
+                    Command::new("trigger")
+                        .about("trigger an event")
+                        .arg(Arg::new("event-name").required(true)),
+                    Command::new("list")
+                        .about("list the possible events")
+                ]),
         )
         .get_matches();
 

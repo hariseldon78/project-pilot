@@ -1,8 +1,9 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
+mod cli;
 mod config;
 mod daemon;
-mod cli;
-pub mod plugin;
+mod event;
+mod plugin;
 
 use std::env;
 use cli::{Cli, run};

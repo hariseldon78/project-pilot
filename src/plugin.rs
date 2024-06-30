@@ -1,13 +1,14 @@
-use std::boxed::Box;
-use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use crate::config::Project;
+use crate::event::Event;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::boxed::Box;
+use std::collections::HashMap;
+use tokio::sync::Mutex;
 
 pub trait Plugin: Send + Sync {
     fn name(&self) -> String;
-    fn on_event(&self, event: &str, project: &mut Project, arguments: &Map<String,Value>);
+    fn on_event(&self, event: Event, project: &mut Project, arguments: &Map<String,Value>);
 }
 
 pub struct PluginFactory {
@@ -35,7 +36,7 @@ impl Plugin for TmuxPlugin {
     fn name(&self) -> String {
         "tmux".to_string()
     }
-    fn on_event(&self, event: &str, project: &mut Project, arguments: &Map<String,Value>) {
+    fn on_event(&self, event: Event, project: &mut Project, arguments: &Map<String,Value>) {
         println!("tmux plugin: {} project: {}", event,project.name);
         match event {
             // "start" => {
