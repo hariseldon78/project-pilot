@@ -58,7 +58,7 @@ pub async fn run(cli: Cli) {
                         .arg(Arg::new("project-name"))
                         .arg(Arg::new("plugin")),
                     Command::new("list").about("list the defined projects"),
-                ]),
+                ])
         )
         .subcommand(
             Command::new("event")
@@ -69,14 +69,20 @@ pub async fn run(cli: Cli) {
                         .arg(Arg::new("event-name").required(true)),
                     Command::new("list")
                         .about("list the possible events")
-                ]),
+                ])
         )
         .subcommand(
             Command::new("plugin")
                 .about("work with plugins")
                 .arg(Arg::new("plugin").required(true))
-                .arg(Arg::new("action").required(true))
-                .arg(Arg::new("project-name"))
+                .subcommands([
+                    Command::new("run")
+                        .about("run a plugin action")
+                        .arg(Arg::new("action").required(true))
+                        .arg(Arg::new("project-name")),
+                    Command::new("list-actions")
+                        .about("list the available actions for this plugin")
+                ])
         )
         .subcommand(
             Command::new("daemon")
