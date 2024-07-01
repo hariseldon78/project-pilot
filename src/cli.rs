@@ -1,10 +1,12 @@
 use crate::config::{Config, Project};
+use crate::daemon::Daemon;
 use clap::{arg, command, Arg, Command};
 use futures::executor::block_on;
 use futures::sink::SinkExt;
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::env;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
@@ -15,9 +17,12 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 pub struct Cli {}
 
-pub async fn run(cli: Cli, socket_path: &str) {
-    let clargs = command!()
-        .next_line_help(true)
+pub async fn run(cli: Cli) {
+    let home:String = env::var("HOME").unwrap();
+    let socket_path:String = home.clone()+"/.cache/project-pilot.socket";
+
+    let mut command_line = command!()
+        // .next_line_help(true)
         .subcommand(
             Command::new("project")
                 .about("work with projects")
@@ -66,10 +71,54 @@ pub async fn run(cli: Cli, socket_path: &str) {
                         .about("list the possible events")
                 ]),
         )
-        .get_matches();
+        .subcommand(
+            Command::new("plugin")
+                .about("work with plugins")
+                .arg(Arg::new("plugin").required(true))
+                .arg(Arg::new("action").required(true))
+                .arg(Arg::new("project-name"))
+        )
+        .subcommand(
+            Command::new("daemon")
+                .about("work with the background process")
+                .subcommands([
+                    Command::new("start")
+                    // for now only in foreground
+                        .about("start the daemon porcess"),
+                    Command::new("status")
+                        .about("get info about the running daemon porcess"),
+                    Command::new("stop")
+                        .about("gracefully closes the daemon process")
+                ])
+        );
 
-    let (subject, sub_args) = clargs.subcommand().expect("Failed to parse subject");
-    let (command, com_args) = sub_args.subcommand().expect("Failed to parse command");
+    let clargs = command_line.clone()        
+        .get_matches();
+    
+    let (subject, sub_args) = if let Some(res)=clargs.subcommand() {res} else {
+        command_line
+            .print_help()
+            .unwrap();
+        return;
+    };
+    let (command, com_args) = if let Some(res)=sub_args.subcommand() {res} else {    
+        command_line
+            .find_subcommand(subject)
+            .unwrap()
+            .clone()
+            .print_help()
+            .unwrap();
+        return;
+    };
+
+    if subject == "daemon" && command == "start" {
+        println!("Starting daemon");
+        let config_path = PathBuf::from(home.clone()+"/.config/project-pilot/config.toml");
+        let mut daemon = Daemon::new(config_path);
+        daemon.start(&socket_path).await;
+        return;
+    }
+ 
     let args_map: HashMap<String, String> = com_args
         .ids()
         .filter_map(|id| {
