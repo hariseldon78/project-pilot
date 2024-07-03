@@ -9,6 +9,8 @@ use tokio::sync::Mutex;
 pub trait Plugin: Send + Sync {
     fn name(&self) -> String;
     fn on_event(&self, event: Event, project: &mut Project, arguments: &Map<String,Value>);
+    fn list_actions(&self) -> Vec<String>;
+    fn run_action(&self, action: &str, project: &mut Project, arguments: &Map<String,Value>) -> Result<String,String>;
 }
 
 pub struct PluginFactory {
@@ -82,21 +84,26 @@ impl Plugin for TmuxPlugin {
                         eprintln!("failed to execute tmux command: {}", String::from_utf8_lossy(&output.stderr));
                     }
                 }
-                // let session = arguments.get("session").unwrap().as_str().unwrap();
-                // let window = arguments.get("window").unwrap().as_str().unwrap();
-                // let pane = arguments.get("pane").unwrap().as_str().unwrap();
-                // let command = arguments.get("command").unwrap().as_str().unwrap();
-                // let tmux_command = format!("tmux new-session -d -s {} -n {} -c {} -P \"{}\"", session, window, project.path, command);
-                // let output = std::process::Command::new("sh")
-                //     .arg("-c")
-                //     .arg(tmux_command)
-                //     .output()
-                //     .expect("failed to execute process");
-                // if !output.status.success() {
-                //     eprintln!("failed to execute tmux command: {}", String::from_utf8_lossy(&output.stderr));
-                // }
             }
             _ => {}
+        }
+    }
+    fn list_actions(&self) -> Vec<String> {
+        vec!["gen_init_terminal".to_string()]
+    }
+    fn run_action(&self, action: &str, project: &mut Project, arguments: &Map<String,Value>) -> Result<String,String> {
+        match action {
+            "gen_init_terminal" => {
+                let session_name = project.name.clone();
+                if project.plugins.contains(&"tmux".to_string()) {
+                    Ok(format!("tmux attach-session -t {}", session_name))
+                } else {
+                    Err("tmux plugin is not enabled".to_string())
+                }
+            }
+            _ => {
+                Err(format!("unknown action: {}", action))
+            }
         }
     }
 }

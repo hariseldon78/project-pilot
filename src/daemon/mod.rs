@@ -7,8 +7,8 @@ use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 use strum::IntoEnumIterator;
 use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
@@ -17,22 +17,22 @@ use tokio_serde::formats::SymmetricalJson;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
-mod project_commands;
 mod event_commands;
+mod plugin_commands;
+mod project_commands;
 
 pub struct Daemon {
     config: Arc<Mutex<SavedConfig>>,
     plugin_manager: Arc<Mutex<PluginFactory>>,
+    should_stop: Arc<Mutex<bool>>,
 }
 
 impl Daemon {
     pub fn new(config_path: PathBuf) -> Self {
-        let config = Arc::new(Mutex::new(SavedConfig::new(config_path)));
-        let plugin_manager = Arc::new(Mutex::new(PluginFactory::new()));
-
         Daemon {
-            config,
-            plugin_manager,
+            config: Arc::new(Mutex::new(SavedConfig::new(config_path))),
+            plugin_manager: Arc::new(Mutex::new(PluginFactory::new())),
+            should_stop: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -52,7 +52,16 @@ impl Daemon {
         })
         .expect("Error setting Ctrl-C handler");
 
+        let cancellation_token = tokio_util::sync::CancellationToken::new();
         loop {
+            if *(self.should_stop.lock().await) {
+                println!("--- stopping (1) ---");
+                break;
+            }
+            println!("--- waiting for connection or cancellation ---");
+
+
+
             match listener.accept().await {
                 Ok((stream, _)) => {
                     println!("--- new connection ---");
@@ -73,27 +82,43 @@ impl Daemon {
                     );
                     let config = Arc::clone(&self.config);
                     let plugin_manager = Arc::clone(&self.plugin_manager);
+                    let should_stop = Arc::clone(&self.should_stop);
 
                     tokio::spawn(async move {
                         // we accept multiple messages on the same connection, a sort of scripting
-                        while let Some(msg) = deserializer.try_next().await.unwrap() {
-                            dbg!(msg.clone());
-                            let subject = msg.get("subject").unwrap().as_str().unwrap();
-                            let command = msg.get("command").unwrap().as_str().unwrap();
-                            let params = msg.get("params").unwrap().as_object().unwrap();
-                            dbg!(&params);
-                            let response = Daemon::handle_request(
-                                &config,
-                                &plugin_manager,
-                                subject,
-                                command,
-                                params,
-                            )
-                            .await;
+                        println!("--- new async ---");
+                        loop {
+                            println!("--- inside loop ---");
+                            if *(should_stop.lock().await) {
+                                println!("--- stopping (2) ---");
+                                break;
+                            }
+                            match deserializer.try_next().await.unwrap() {
+                                Some(msg) => {
+                                    dbg!(msg.clone());
+                                    let subject = msg.get("subject").unwrap().as_str().unwrap();
+                                    let command = msg.get("command").unwrap().as_str().unwrap();
+                                    let params = msg.get("params").unwrap().as_object().unwrap();
+                                    dbg!((subject,command,&params));
+                                    let response = Daemon::handle_request(
+                                        &config,
+                                        &plugin_manager,
+                                        &should_stop,
+                                        subject,
+                                        command,
+                                        params,
+                                    )
+                                    .await;
 
-                            dbg!(&response);
-                            serializer.send(json!({"lines":response})).await.unwrap();
+                                    dbg!(&response);
+                                    serializer.send(json!({"lines":response})).await.unwrap();
+                                }
+                                None => {
+                                    break;
+                                }
+                            }
                         }
+                        println!("--- exiting async ---");
                     });
                 }
                 Err(e) => {
@@ -101,11 +126,13 @@ impl Daemon {
                 }
             }
         }
+        eprintln!("--- stopping daemon ---");
     }
 
     async fn handle_request(
         config: &Arc<Mutex<SavedConfig>>,
         plugin_manager: &Arc<Mutex<PluginFactory>>,
+        should_stop: &Arc<Mutex<bool>>,
         subject: &str,
         command: &str,
         arguments: &serde_json::Map<String, Value>,
@@ -113,9 +140,31 @@ impl Daemon {
         match subject {
             "project" => Daemon::handle_project(config, plugin_manager, command, arguments).await,
             "event" => Daemon::handle_event(config, plugin_manager, command, arguments).await,
+            "plugin" => Daemon::handle_plugin(config, plugin_manager, command, arguments).await,
+            "daemon" => {
+                Daemon::handle_daemon(config, plugin_manager, should_stop, command, arguments).await
+            }
             _ => "Unknown command".to_string(),
         }
     }
 
-
+    pub async fn handle_daemon(
+        config: &Arc<Mutex<SavedConfig>>,
+        plugin_manager: &Arc<Mutex<PluginFactory>>,
+        should_stop: &Arc<Mutex<bool>>,
+        command: &str,
+        arguments: &serde_json::Map<String, Value>,
+    ) -> String {
+        let plugin_manager = plugin_manager.lock().await;
+        match command {
+            "status" => {
+                format!("up and running")
+            }
+            "stop" => {
+                *should_stop.lock().await = true;
+                format!("stopping")
+            }
+            _ => "Unknown command".to_string(),
+        }
+    }
 }
