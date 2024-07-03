@@ -5,8 +5,6 @@ use strum::EnumString;
 pub enum Event {
     ProjectPeek,
     ProjectSwitch,
-    ProjectAdd,
-    ProjectDelete,
     ProjectUpdate,
     PluginEnable,
     PluginDisable,
