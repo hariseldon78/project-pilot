@@ -18,8 +18,8 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 pub struct Cli {}
 
 pub async fn run(cli: Cli) {
-    let home:String = env::var("HOME").unwrap();
-    let socket_path:String = home.clone()+"/.cache/project-pilot.socket";
+    let home: String = env::var("HOME").unwrap();
+    let socket_path: String = home.clone() + "/.cache/project-pilot.socket";
 
     let mut command_line = command!()
         // .next_line_help(true)
@@ -58,7 +58,7 @@ pub async fn run(cli: Cli) {
                         .arg(Arg::new("project-name"))
                         .arg(Arg::new("plugin")),
                     Command::new("list").about("list the defined projects"),
-                ])
+                ]),
         )
         .subcommand(
             Command::new("event")
@@ -67,9 +67,8 @@ pub async fn run(cli: Cli) {
                     Command::new("trigger")
                         .about("trigger an event")
                         .arg(Arg::new("event-name").required(true)),
-                    Command::new("list")
-                        .about("list the possible events")
-                ])
+                    Command::new("list").about("list the possible events"),
+                ]),
         )
         .subcommand(
             Command::new("plugin")
@@ -81,33 +80,38 @@ pub async fn run(cli: Cli) {
                         .arg(Arg::new("action").required(true))
                         .arg(Arg::new("project-name")),
                     Command::new("list-actions")
-                        .about("list the available actions for this plugin")
-                ])
+                        .about("list the available actions for this plugin"),
+                ]),
         )
         .subcommand(
             Command::new("daemon")
                 .about("work with the background process")
                 .subcommands([
                     Command::new("start")
-                    // for now only in foreground
-                        .about("start the daemon porcess"),
-                    Command::new("status")
-                        .about("get info about the running daemon porcess"),
-                    Command::new("stop")
-                        .about("gracefully closes the daemon process")
-                ])
+                        // for now only in foreground
+                        .about("start the daemon porcess")
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(clap::ArgAction::SetTrue)
+                                .help("rebind the socket if it's found"),
+                        ),
+                    Command::new("status").about("get info about the running daemon porcess"),
+                    Command::new("stop").about("gracefully closes the daemon process"),
+                ]),
         );
 
-    let clargs = command_line.clone()        
-        .get_matches();
-    
-    let (subject, sub_args) = if let Some(res)=clargs.subcommand() {res} else {
-        command_line
-            .print_help()
-            .unwrap();
+    let clargs = command_line.clone().get_matches();
+
+    let (subject, sub_args) = if let Some(res) = clargs.subcommand() {
+        res
+    } else {
+        command_line.print_help().unwrap();
         return;
     };
-    let (command, com_args) = if let Some(res)=sub_args.subcommand() {res} else {    
+    let (command, com_args) = if let Some(res) = sub_args.subcommand() {
+        res
+    } else {
         command_line
             .find_subcommand(subject)
             .unwrap()
@@ -116,23 +120,29 @@ pub async fn run(cli: Cli) {
             .unwrap();
         return;
     };
-
     if subject == "daemon" && command == "start" {
         println!("Starting daemon");
-        let config_path = PathBuf::from(home.clone()+"/.config/project-pilot/config.toml");
+        let config_path = PathBuf::from(home.clone() + "/.config/project-pilot/config.toml");
         let mut daemon = Daemon::new(config_path);
-        daemon.start(&socket_path).await;
+        let force: bool = *(com_args.get_one("force").unwrap());
+        // let force: bool=match force_arg {
+        //     Some(x) => *x,
+        //     None => false,
+        // };
+        daemon.start(&socket_path,force).await;
         return;
     }
- 
-    let args_map: HashMap<String, String> = com_args
-        .ids()
-        .filter_map(|id| {
-            com_args
-                .get_one::<String>(id.as_str())
-                .map(|v| (String::from(id.as_str()), v.clone()))
-        })
-        .collect();
+
+    fn collect_args(args: &clap::ArgMatches) -> impl Iterator<Item = (String, String)> + '_ {
+        args
+            .ids()
+            .filter_map(|id| {
+                args
+                    .get_one::<String>(id.as_str())
+                    .map(|v| (String::from(id.as_str()), v.clone()))
+            })
+    }
+    let args_map: HashMap<String, String> = collect_args(sub_args).chain(collect_args(com_args)).collect();
 
     let stream = UnixStream::connect(socket_path)
         .await

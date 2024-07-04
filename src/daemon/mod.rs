@@ -36,98 +36,123 @@ impl Daemon {
         }
     }
 
-    pub async fn start(&mut self, socket_path: &str) {
+    pub async fn start(&mut self, socket_path: &str, force: bool) {
         self.plugin_manager
             .lock()
             .await
             .register_plugin(Mutex::new(Box::new(TmuxPlugin {})))
             .await;
 
+        if force && std::path::Path::new(socket_path).exists() {
+            std::fs::remove_file(socket_path).unwrap();
+        }
         let listener = UnixListener::bind(socket_path).expect("Failed to bind socket");
         let sp2 = RefCell::new(socket_path.to_string());
         ctrlc::set_handler(move || {
             println!("removing socket file");
-            std::fs::remove_file(sp2.borrow().clone()).unwrap();
+            let socket_path = sp2.borrow().clone();
+            if force && std::path::Path::new(&socket_path).exists() {
+                std::fs::remove_file(&socket_path).unwrap();
+            }
             std::process::exit(1);
         })
         .expect("Error setting Ctrl-C handler");
 
         let cancellation_token = tokio_util::sync::CancellationToken::new();
         loop {
-            if *(self.should_stop.lock().await) {
-                println!("--- stopping (1) ---");
-                break;
-            }
+            // if *(self.should_stop.lock().await) {
+            //     println!("--- stopping (1) ---");
+            //     break;
+            // }
             println!("--- waiting for connection or cancellation ---");
 
-
-
-            match listener.accept().await {
-                Ok((stream, _)) => {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    println!("--- stopping (3) ---");
+                    break;
+                },
+                connection = listener.accept() => {
                     println!("--- new connection ---");
-
-                    let (read_socket, write_socket) = split(stream);
-
-                    let length_delimited_read =
-                        FramedRead::new(read_socket, LengthDelimitedCodec::new());
-                    let mut deserializer = tokio_serde::SymmetricallyFramed::new(
-                        length_delimited_read,
-                        SymmetricalJson::<Value>::default(),
-                    );
-                    let length_delimited_write =
-                        FramedWrite::new(write_socket, LengthDelimitedCodec::new());
-                    let mut serializer = tokio_serde::SymmetricallyFramed::new(
-                        length_delimited_write,
-                        SymmetricalJson::<Value>::default(),
-                    );
-                    let config = Arc::clone(&self.config);
-                    let plugin_manager = Arc::clone(&self.plugin_manager);
-                    let should_stop = Arc::clone(&self.should_stop);
-
-                    tokio::spawn(async move {
-                        // we accept multiple messages on the same connection, a sort of scripting
-                        println!("--- new async ---");
-                        loop {
-                            println!("--- inside loop ---");
-                            if *(should_stop.lock().await) {
-                                println!("--- stopping (2) ---");
-                                break;
-                            }
-                            match deserializer.try_next().await.unwrap() {
-                                Some(msg) => {
-                                    dbg!(msg.clone());
-                                    let subject = msg.get("subject").unwrap().as_str().unwrap();
-                                    let command = msg.get("command").unwrap().as_str().unwrap();
-                                    let params = msg.get("params").unwrap().as_object().unwrap();
-                                    dbg!((subject,command,&params));
-                                    let response = Daemon::handle_request(
-                                        &config,
-                                        &plugin_manager,
-                                        &should_stop,
-                                        subject,
-                                        command,
-                                        params,
-                                    )
-                                    .await;
-
-                                    dbg!(&response);
-                                    serializer.send(json!({"lines":response})).await.unwrap();
-                                }
-                                None => {
-                                    break;
-                                }
-                            }
+                    match connection {
+                        Ok((stream, _)) => {
+                            self.handle_connection(stream,cancellation_token.clone()).await;
                         }
-                        println!("--- exiting async ---");
-                    });
-                }
-                Err(e) => {
-                    eprintln!("Error accepting connection: {}", e);
+                        Err(e) => {
+                            eprintln!("Error accepting connection: {}", e);
+                        }
+
+                    }
                 }
             }
         }
-        eprintln!("--- stopping daemon ---");
+        println!("--- stopping daemon ---");
+        if force && std::path::Path::new(&socket_path).exists() {
+            println!("--- removing socket file ---");
+            std::fs::remove_file(&socket_path).unwrap();
+        }
+        std::process::exit(1);
     }
+    async fn handle_connection(&mut self,stream: tokio::net::UnixStream,cancellation_token: tokio_util::sync::CancellationToken) {
+        println!("--- new connection ---");
+
+        let (read_socket, write_socket) = split(stream);
+
+        let length_delimited_read =
+            FramedRead::new(read_socket, LengthDelimitedCodec::new());
+        let mut deserializer = tokio_serde::SymmetricallyFramed::new(
+            length_delimited_read,
+            SymmetricalJson::<Value>::default(),
+        );
+        let length_delimited_write =
+            FramedWrite::new(write_socket, LengthDelimitedCodec::new());
+        let mut serializer = tokio_serde::SymmetricallyFramed::new(
+            length_delimited_write,
+            SymmetricalJson::<Value>::default(),
+        );
+        let config = Arc::clone(&self.config);
+        let plugin_manager = Arc::clone(&self.plugin_manager);
+        let should_stop = Arc::clone(&self.should_stop);
+
+        tokio::spawn(async move {
+            // we accept multiple messages on the same connection, a sort of scripting
+            println!("--- new async ---");
+            loop {
+                println!("--- inside loop ---");
+                if *(should_stop.lock().await) {
+                    println!("--- stopping (2) ---");
+                    cancellation_token.cancel();
+                    break;
+                }
+                match deserializer.try_next().await.unwrap() {
+                    Some(msg) => {
+                        dbg!(msg.clone());
+                        let subject = msg.get("subject").unwrap().as_str().unwrap();
+                        let command = msg.get("command").unwrap().as_str().unwrap();
+                        let params = msg.get("params").unwrap().as_object().unwrap();
+                        dbg!((subject,command,&params));
+                        let response = Daemon::handle_request(
+                            &config,
+                            &plugin_manager,
+                            &should_stop,
+                            subject,
+                            command,
+                            params,
+                        )
+                            .await;
+
+                        dbg!(&response);
+                        serializer.send(json!({"lines":response})).await.unwrap();
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+            println!("--- exiting async ---");
+        });
+        
+    }
+
 
     async fn handle_request(
         config: &Arc<Mutex<SavedConfig>>,
