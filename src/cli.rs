@@ -78,7 +78,8 @@ pub async fn run(cli: Cli) {
                     Command::new("run")
                         .about("run a plugin action")
                         .arg(Arg::new("action").required(true))
-                        .arg(Arg::new("project-name")),
+                        .arg(Arg::new("project-name"))
+                        .arg(Arg::new("args").num_args(1..)),
                     Command::new("list-actions")
                         .about("list the available actions for this plugin"),
                 ]),
@@ -137,9 +138,9 @@ pub async fn run(cli: Cli) {
         args
             .ids()
             .filter_map(|id| {
-                args
-                    .get_one::<String>(id.as_str())
-                    .map(|v| (String::from(id.as_str()), v.clone()))
+                let many = args.get_many::<String>(id.as_str());
+                let joined = many.unwrap().map(|x| x.to_string()).collect::<Vec<String>>().join(" ");
+                Some((String::from(id.as_str()), joined))
             })
     }
     let args_map: HashMap<String, String> = collect_args(sub_args).chain(collect_args(com_args)).collect();

@@ -90,7 +90,6 @@ impl Daemon {
             println!("--- removing socket file ---");
             std::fs::remove_file(&socket_path).unwrap();
         }
-        std::process::exit(1);
     }
     async fn handle_connection(&mut self,stream: tokio::net::UnixStream,cancellation_token: tokio_util::sync::CancellationToken) {
         println!("--- new connection ---");
