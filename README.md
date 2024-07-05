@@ -11,5 +11,5 @@ Features:
 Plugin list:
 
 - tmux: it will create a session for each enabled project
-- hyprland: it will create a group of named workspaces for the projects, and react to workspace switching setting the *current project*
+- (WIP) hyprland: it will create a group of named workspaces for the projects, and react to workspace switching setting the *current project*
 - (TODO) clockify: starts and switch the clockify time tracker when the *current project* changes
