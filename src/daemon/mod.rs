@@ -18,6 +18,7 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 mod event_commands;
+mod global_commands;
 mod plugin_commands;
 mod project_commands;
 
@@ -162,6 +163,7 @@ impl Daemon {
         arguments: &serde_json::Map<String, Value>,
     ) -> String {
         match subject {
+            "global" => Daemon::handle_global(config, plugin_manager, command, arguments).await,
             "project" => Daemon::handle_project(config, plugin_manager, command, arguments).await,
             "event" => Daemon::handle_event(config, plugin_manager, command, arguments).await,
             "plugin" => Daemon::handle_plugin(config, plugin_manager, command, arguments).await,

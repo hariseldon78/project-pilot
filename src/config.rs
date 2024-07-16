@@ -14,6 +14,7 @@ pub struct Project {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Config {
     pub projects: Vec<Project>,
+    pub properties: HashMap<String, String>,
 }
 
 impl Config {

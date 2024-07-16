@@ -24,6 +24,23 @@ pub async fn run(cli: Cli) {
     let mut command_line = command!()
         // .next_line_help(true)
         .subcommand(
+            Command::new("global")
+                .about("work with global settings")
+                .subcommands([
+                    Command::new("get-property")
+                        .about("get the value of a property")
+                        .arg(Arg::new("property")),
+                    Command::new("del-property")
+                        .about("delete a property")
+                        .arg(Arg::new("property")),
+                    Command::new("set-property")
+                        .about("set property to a value")
+                        .arg(Arg::new("property"))
+                        .arg(Arg::new("value")),
+                    Command::new("list-properties").about("list the defined global properties"),
+                ]),
+        )
+        .subcommand(
             Command::new("project")
                 .about("work with projects")
                 .subcommands([

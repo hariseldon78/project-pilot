@@ -29,31 +29,12 @@ impl Daemon {
         let plugin_manager = plugin_manager.lock().await;
         match command {
             "run" => {
-                // if let Some(serde_json::value::Value::String(event_name)) =
-                //     arguments.get("event-name")
-                // {
-                //     if let Ok(event) = Event::from_str(event_name) {
-                //         for project in config.data.projects.iter_mut() {
-                //             for plugin_name in &project.plugins.clone() {
-                //                 let plugin =
-                //                     &plugin_manager.get_plugin(plugin_name).unwrap().lock().await;
-                //                 plugin.on_event(event, project, arguments);
-                //             }
-                //         }
-                //         "Event triggered".to_string()
-                //     } else {
-                //         "Invalid event".to_string()
-                //     }
-                // } else {
-                //     "Missign event name".to_string()
-                // }
                 let plugin_name = arguments.get("plugin").unwrap().as_str().unwrap();
                 let action = arguments.get("action").unwrap().as_str().unwrap();
                 let project_name = arguments.get("project-name").unwrap().as_str().unwrap();
                 let project = config.data.projects.iter_mut().find(|p| p.name == project_name).unwrap();
                 let plugin = plugin_manager.get_plugin(plugin_name).unwrap().lock().await;
                 plugin.run_action(action, project, arguments).unwrap()
-
             }
             "list-actions" => {
                 let plugin = arguments.get("plugin").unwrap().as_str().unwrap();
